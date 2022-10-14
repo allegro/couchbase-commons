@@ -16,7 +16,7 @@ plugins {
     `java-library`
     id("io.gitlab.arturbosch.detekt") version "1.17.1"
     id("pl.allegro.tech.build.axion-release") version "1.14.0"
-    id("com.gradle.plugin-publish") version "0.21.0"
+    `maven-publish`
     id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
 }
 
