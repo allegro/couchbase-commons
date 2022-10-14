@@ -13,14 +13,15 @@ buildscript {
 }
 
 plugins {
+    `java-library`
     id("io.gitlab.arturbosch.detekt") version "1.17.1"
     id("pl.allegro.tech.build.axion-release") version "1.14.0"
+    id("com.gradle.plugin-publish") version "0.21.0"
+    id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
 }
 
 scmVersion {
-    tag {
-        prefix.set("")
-    }
+    versionCreator("versionWithBranch")
 }
 
 allprojects {
@@ -57,5 +58,52 @@ subprojects {
     detekt {
         input = files("src/main/kotlin", "src/test/kotlin", "src/integration/kotlin")
         config = files("$rootDir/config/detekt/default-detekt-config.yml", "$rootDir/config/detekt/detekt-config.yml")
+    }
+}
+
+
+publishing {
+    publications {
+        create<MavenPublication>("sonatype") {
+            artifactId = "couchbase"
+            from(components.findByName("java"))
+            versionMapping {
+                usage("java-api") {
+                    fromResolutionOf("runtimeClasspath")
+                }
+                usage("java-runtime") {
+                    fromResolutionResult()
+                }
+            }
+            pom {
+                name.set("couchbase-commons")
+                url.set("https://github.com/allegro/couchbase-commons")
+                inceptionYear.set("2022")
+                licenses {
+                    license {
+                        name.set("The Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("allegro")
+                        name.set("opensource@allegro.pl")
+                    }
+                }
+                scm {
+                    connection.set("scm:git@github.com:allegro/couchbase-commons.git")
+                    developerConnection.set("scm:git@github.com:allegro/couchbase-commons.git")
+                    url.set("https://github.com/allegro/couchbase-commons")
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            val releasesRepoUrl = uri("https://oss.sonatype.org/service/local/staging/deploy/maven2/")
+            val snapshotsRepoUrl = uri("https://oss.sonatype.org/content/repositories/snapshots/")
+            url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
+        }
     }
 }
