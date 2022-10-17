@@ -78,6 +78,7 @@ publishing {
             }
             pom {
                 name.set("couchbase-commons")
+                description.set("Helpers for couchbase")
                 url.set("https://github.com/allegro/couchbase-commons")
                 inceptionYear.set("2022")
                 licenses {
