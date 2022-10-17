@@ -4,6 +4,8 @@ import com.couchbase.client.core.error.DocumentNotFoundException
 import com.couchbase.client.java.codec.TypeRef
 import com.couchbase.client.java.json.JsonObject
 import com.couchbase.client.java.kv.GetResult
+import com.couchbase.client.java.kv.InsertOptions
+import com.couchbase.client.java.kv.MutateInOptions
 import com.couchbase.client.java.kv.MutateInSpec
 import com.couchbase.client.java.kv.MutationResult
 import com.couchbase.client.java.kv.UpsertOptions
@@ -56,7 +58,8 @@ private const val MAX_MUTATE_IN_OPERATIONS = 16
 class CouchbaseSetRepository<T: CouchbaseSetEntry>(
     private val collection: CouchbaseCollection,
     private val type: Class<T>,
-    private val meterRegistry: MeterRegistry
+    private val setDictionaryTtl: Duration,
+    private val meterRegistry: MeterRegistry,
 ) {
 
     fun add(key: String, value: T, ttl: Duration): Mono<Unit> = add(key, setOf(value), ttl)
@@ -83,12 +86,14 @@ class CouchbaseSetRepository<T: CouchbaseSetEntry>(
     private fun insertKeysToIndex(collectionKey: String, keys: List<String>): Mono<MutationResult> {
         return collection.mutateIn(
             collectionKey,
-            keys.map { singleKey -> MutateInSpec.upsert(singleKey, 1).createPath() })
+            keys.map { singleKey -> MutateInSpec.upsert(singleKey, 1).createPath() },
+            dictionaryMutateInOptions()
+        )
             .measure(meterRegistry, "set.mutate.dictionary")
             .cast(MutationResult::class.java)
             .onErrorResume { throwable ->
                 if (throwable is DocumentNotFoundException)
-                    collection.insert(collectionKey, keys.map { it to 1 }.toMap())
+                    collection.insert(collectionKey, keys.map { it to 1 }.toMap(), dictionaryInsertOptions())
                         .measure(meterRegistry, "set.write.dictionary")
                 else
                     Mono.error(throwable)
@@ -139,6 +144,11 @@ class CouchbaseSetRepository<T: CouchbaseSetEntry>(
                 collection.mutateIn(key, it)
             }.collectList()
 
+    private fun dictionaryMutateInOptions()
+        = MutateInOptions.mutateInOptions().expiry(setDictionaryTtl)
+
+    private fun dictionaryInsertOptions()
+        = InsertOptions.insertOptions().expiry(setDictionaryTtl)
 }
 
 private class StringKeyedMapTypeRef<T>(valueType: Class<T>) : TypeRef<Map<String, T>>() {

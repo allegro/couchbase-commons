@@ -18,22 +18,25 @@ import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveLowerBound
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldHaveUpperBound
+import io.kotest.matchers.date.shouldBeAfter
+import io.kotest.matchers.date.shouldBeBefore
 import io.kotest.matchers.shouldBe
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
+import org.testcontainers.couchbase.BucketDefinition
+import org.testcontainers.couchbase.CouchbaseContainer
 import reactor.core.publisher.Mono
 import java.time.Duration
 import java.time.Instant
-import org.testcontainers.couchbase.BucketDefinition
-import org.testcontainers.couchbase.CouchbaseContainer
 
 class CouchbaseRepositorySpec : StringSpec() {
 
     private lateinit var reactiveCollection: ReactiveCollection
     private lateinit var collection: CouchbaseCollection
     private val prefix = "prefix"
+    private val dictionaryTtl = Duration.ofSeconds(100)
 
     override fun beforeSpec(spec: Spec) {
         val bucketName = "mybucket"
@@ -45,7 +48,8 @@ class CouchbaseRepositorySpec : StringSpec() {
 
         val cluster = ReactiveCluster.connect(
             container.connectionString,
-            ClusterOptions.clusterOptions(container.username, container.password)
+            ClusterOptions
+                .clusterOptions(container.username, container.password)
                 .environment(
                     ClusterEnvironment.builder()
                         .jsonSerializer(JacksonJsonSerializer.create(jacksonObjectMapper()))
@@ -61,7 +65,7 @@ class CouchbaseRepositorySpec : StringSpec() {
         "should save object in cache" {
             //GIVEN
             val repository = TypedCouchbaseRepository(collection, DTO::class.java, SimpleMeterRegistry())
-            val dto = DTO("key", "body")
+            val dto = DTO("partialId", "partialBody")
 
             //WHEN
             repository.put(dto.id, dto).block()
@@ -77,7 +81,7 @@ class CouchbaseRepositorySpec : StringSpec() {
         "should save object in cache using hashed key when provided ts longer than 250 characters" {
             //GIVEN
             val repository = TypedCouchbaseRepository(collection, DTO::class.java, SimpleMeterRegistry())
-            val dto = DTO("id".repeat(250), "body")
+            val dto = DTO("id".repeat(250), "partialBody")
 
             //WHEN
             repository.put(dto.id, dto).block()
@@ -102,7 +106,7 @@ class CouchbaseRepositorySpec : StringSpec() {
             val writeActualCount = writeTimer.count()
             val readActualCount = readTimer.count()
 
-            val dto = DTO("key", "body")
+            val dto = DTO("somePartial", "partialBody")
 
             //WHEN
             repository.put(dto.id, dto).block()
@@ -129,7 +133,7 @@ class CouchbaseRepositorySpec : StringSpec() {
             val readActualCount = readErrors.count()
 
             //WHEN
-            repository.put("id", DTO("key", "body")).onErrorResume { _ -> Mono.empty() }.block()
+            repository.put("id", DTO("somePartial", "partialBody")).onErrorResume { _ -> Mono.empty() }.block()
             repository.get("id").onErrorResume { _ -> Mono.empty() }.block()
 
             //THEN
@@ -144,7 +148,7 @@ class CouchbaseRepositorySpec : StringSpec() {
             val writeDictionaryTimer = meterRegistry.timer("cache.couchbase.set.write.dictionary")
             val mutateDictionaryTimer = meterRegistry.timer("cache.couchbase.set.mutate.dictionary")
             val writeTimer = meterRegistry.timer("cache.couchbase.set.write")
-            val repository = CouchbaseSetRepository(collection, DTO::class.java, meterRegistry)
+            val repository = CouchbaseSetRepository(collection, DTO::class.java, dictionaryTtl, meterRegistry)
             val longKey = "dtos1".repeat(250)
 
             //WHEN
@@ -152,6 +156,7 @@ class CouchbaseRepositorySpec : StringSpec() {
             val dtos = (1..30).map { DTO("id_$it", "value_$it") }.toSet()
             repository.add(longKey, dtos, ttl = ttl).block()
             val expiryTime = Instant.now().plus(ttl)
+            val dictionaryExpiry = Instant.now().plus(dictionaryTtl)
 
             //EXPECT
             writeItemTimer.count() shouldBe 30
@@ -174,9 +179,11 @@ class CouchbaseRepositorySpec : StringSpec() {
             mutateDictionaryTimer.count() shouldBe 4
             writeTimer.count() shouldBe 2
 
-            val raw = reactiveCollection.get("prefix_$longKey".sha256()).block()!!
-            val rawObject = raw.contentAs(Map::class.java)
             val getOptions = GetOptions.getOptions().withExpiry(true)
+            val raw = reactiveCollection.get("prefix_$longKey".sha256(), getOptions).block()!!
+            raw.expiryTime().get() shouldBeAfter dictionaryExpiry.minusSeconds(2)
+            raw.expiryTime().get() shouldBeBefore dictionaryExpiry.plusSeconds(2)
+            val rawObject = raw.contentAs(Map::class.java)
             val setItems = rawObject.keys
                 .map { it as String }
                 .map { reactiveCollection.get("prefix_${longKey}_$it".sha256(), getOptions).block() }
@@ -187,7 +194,7 @@ class CouchbaseRepositorySpec : StringSpec() {
 
         "should remove evicted values from dictionary" {
             //GIVEN
-            val repository = CouchbaseSetRepository(collection, DTO::class.java, SimpleMeterRegistry())
+            val repository = CouchbaseSetRepository(collection, DTO::class.java, dictionaryTtl, SimpleMeterRegistry())
 
             repository.add("dtos2", DTO("id_1", "value_1"), ttl = Duration.ofSeconds(20)).block()
             repository.add("dtos2", DTO("id_2", "value_2"), ttl = Duration.ofSeconds(10)).block()
@@ -215,7 +222,7 @@ class CouchbaseRepositorySpec : StringSpec() {
 
         "should remove more than 16 items from set" {
             //GIVEN
-            val repository = CouchbaseSetRepository(collection, DTO::class.java, SimpleMeterRegistry())
+            val repository = CouchbaseSetRepository(collection, DTO::class.java, dictionaryTtl, SimpleMeterRegistry())
             val ttl = Duration.ofSeconds(60)
             val dtos = (1..30).map { DTO("id_$it", "value_$it") }.toSet()
             repository.add("dtosA", dtos, ttl = ttl).block()
@@ -235,7 +242,7 @@ class CouchbaseRepositorySpec : StringSpec() {
 
         "should remove same value from single set only" {
             //GIVEN
-            val repository = CouchbaseSetRepository(collection, DTO::class.java, SimpleMeterRegistry())
+            val repository = CouchbaseSetRepository(collection, DTO::class.java, dictionaryTtl, SimpleMeterRegistry())
 
             val ttl = Duration.ofSeconds(60)
             val dtos = (1..10).map { DTO("id_$it", "value_$it") }.toSet()
