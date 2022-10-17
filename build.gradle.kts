@@ -18,6 +18,7 @@ plugins {
     id("pl.allegro.tech.build.axion-release") version "1.14.0"
     `maven-publish`
     id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
+    signing
 }
 
 scmVersion {
@@ -105,5 +106,25 @@ publishing {
             val snapshotsRepoUrl = uri("https://oss.sonatype.org/content/repositories/snapshots/")
             url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
         }
+    }
+}
+
+nexusPublishing {
+    repositories {
+        sonatype {
+            username.set(System.getenv("SONATYPE_USERNAME"))
+            password.set(System.getenv("SONATYPE_PASSWORD"))
+        }
+    }
+}
+
+System.getenv("GPG_KEY_ID")?.let {
+    signing {
+        useInMemoryPgpKeys(
+            System.getenv("GPG_KEY_ID"),
+            System.getenv("GPG_PRIVATE_KEY"),
+            System.getenv("GPG_PRIVATE_KEY_PASSWORD")
+        )
+        sign(publishing.publications)
     }
 }
