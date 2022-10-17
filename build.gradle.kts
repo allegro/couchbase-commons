@@ -41,6 +41,10 @@ allprojects {
 subprojects {
     apply(plugin = "maven-publish")
     apply(plugin = "io.gitlab.arturbosch.detekt")
+    java {
+        withSourcesJar()
+        withJavadocJar()
+    }
 
     tasks.withType<KotlinCompile> {
         kotlinOptions {
@@ -117,14 +121,15 @@ nexusPublishing {
         }
     }
 }
-
-System.getenv("GPG_KEY_ID")?.let {
-    signing {
-        useInMemoryPgpKeys(
-            System.getenv("GPG_KEY_ID"),
-            System.getenv("GPG_PRIVATE_KEY"),
-            System.getenv("GPG_PRIVATE_KEY_PASSWORD")
-        )
-        sign(publishing.publications)
+allprojects {
+    System.getenv("GPG_KEY_ID")?.let {
+        signing {
+            useInMemoryPgpKeys(
+                System.getenv("GPG_KEY_ID"),
+                System.getenv("GPG_PRIVATE_KEY"),
+                System.getenv("GPG_PRIVATE_KEY_PASSWORD")
+            )
+            sign(publishing.publications)
+        }
     }
 }
