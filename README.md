@@ -1,3 +1,6 @@
+[![Build](https://github.com/allegro/couchbase-commons/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/allegro/couchbase-commons/actions/workflows/ci.yaml)
+![Maven Central](https://img.shields.io/maven-central/v/pl.allegro.tech.couchbase-commons/couchbase)
+
 # couchbase-commons
 
 ## Usage
