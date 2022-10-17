@@ -18,7 +18,7 @@ plugins {
     id("pl.allegro.tech.build.axion-release") version "1.14.0"
     `maven-publish`
     id("io.github.gradle-nexus.publish-plugin") version "1.1.0"
-    signing
+    `signing`
 }
 
 scmVersion {
@@ -41,6 +41,7 @@ allprojects {
 subprojects {
     apply(plugin = "maven-publish")
     apply(plugin = "io.gitlab.arturbosch.detekt")
+    apply(plugin = "signing")
     java {
         withSourcesJar()
         withJavadocJar()
