@@ -34,7 +34,7 @@ class ReactiveCouchbaseCollection(
         = collection.remove(prepareKey(key))
 
     private fun prepareKey(key: String)
-        = if (key.length > MAX_KEY_LENGTH) {
+        = if (key.encodeToByteArray().size > MAX_KEY_LENGTH) {
         key.sha256()
     } else {
         key
